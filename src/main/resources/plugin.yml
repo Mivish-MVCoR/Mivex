@@ -1,0 +1,24 @@
+name: Mivex
+version: '1.0-SNAPSHOT'
+main: ua.mvcor.mivex.Mivex
+api-version: '1.19'
+author: MV CoR
+description: Власний модульний плагін для сервера Projekt 5.2
+
+commands:
+  cshop:
+    description: Головна команда системи магазинів MV Shop
+    usage: /cshop
+
+  mivex:
+    description: Інформація про Mivex
+    usage: /mivex about
+    permission: mivex.about
+
+permissions:
+  mivex.about:
+    description: Доступ до команди /mivex about
+    default: op
+  mivex.admin:
+    description: Доступ до адмін-функцій /cshop (перегляд усіх магазинів тощо)
+    default: op
