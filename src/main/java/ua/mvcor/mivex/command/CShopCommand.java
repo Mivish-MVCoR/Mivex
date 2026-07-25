@@ -19,7 +19,6 @@ import ua.mvcor.mivex.storage.ShopStorage;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -30,14 +29,11 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
     private static final int MAX_PRICE = 999999;
     private static final int TAB_SUGGESTION_LIMIT = 128;
     private static final Material CURRENCY = Material.PHANTOM_MEMBRANE;
-    private static final String RESTORE_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-    private static final int RESTORE_CODE_LENGTH = 5;
 
     private static final Pattern KEY_PATTERN = Pattern.compile("^[A-Za-z0-9_-]+$");
 
     private final ShopManager shopManager;
     private final ShopStorage shopStorage;
-    private final Random random = new Random();
 
     public CShopCommand(ShopManager shopManager, ShopStorage shopStorage) {
         this.shopManager = shopManager;
@@ -59,12 +55,8 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        if (args[0].equalsIgnoreCase("restore")) {
-            if (args.length == 1) {
-                handleRestoreList(player);
-            } else {
-                handleRestoreExecute(player, args);
-            }
+        if (args[0].equalsIgnoreCase("unbroken")) {
+            handleUnbroken(player, args);
             return true;
         }
 
@@ -90,15 +82,6 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            if (args[1].equalsIgnoreCase("disactivated")) {
-                if (args.length >= 4 && args[2].equalsIgnoreCase("remove")) {
-                    handleRemoveDisactivated(player, args[3]);
-                } else {
-                    handleListDisactivated(player);
-                }
-                return true;
-            }
-
             handleListPlayer(player, args[1]);
             return true;
         }
@@ -118,12 +101,11 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
     private void sendHelp(Player player) {
         player.sendMessage("§b=== Mivex Shop — команди ===");
-        player.sendMessage("§e/cshop restore §f- твої втрачені (LOST) магазини");
-        player.sendMessage("§e/cshop restore КОД key[KEY] §f- відновити магазин");
-        player.sendMessage("§e/cshop delete КОД key[KEY] §f- видалити магазин назавжди");
-        player.sendMessage("§e/cshop mylist §f- твої активні магазини");
+        player.sendMessage("§e/cshop unbroken key[KEY] §f- відновити зламаний магазин");
+        player.sendMessage("§e/cshop delete key[KEY] §f- видалити магазин, на який дивишся");
+        player.sendMessage("§e/cshop mylist §f- твої магазини");
         player.sendMessage("§e/cshop edit KEY ITEM amXX prYY sell/buy §f- редагувати");
-        player.sendMessage("§7/cshop list [player|allplayer|disactivated] §7(адмін)");
+        player.sendMessage("§7/cshop list [player|allplayer] §7(адмін)");
         player.sendMessage("§7/cshop about");
         player.sendMessage("");
         player.sendMessage("§aСтворення магазину:");
@@ -139,18 +121,15 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
 
-        if (!(sender instanceof Player)) return List.of();
-        Player player = (Player) sender;
-
         int position = args.length;
         String current = args.length > 0 ? args[args.length - 1] : "";
         boolean isEdit = args.length > 0 && args[0].equalsIgnoreCase("edit");
-        boolean isRestore = args.length > 0 && args[0].equalsIgnoreCase("restore");
         boolean isDelete = args.length > 0 && args[0].equalsIgnoreCase("delete");
+        boolean isUnbroken = args.length > 0 && args[0].equalsIgnoreCase("unbroken");
 
         if (position == 1) {
             List<String> options = new ArrayList<>();
-            options.add("restore");
+            options.add("unbroken");
             options.add("delete");
             options.add("mylist");
             options.add("edit");
@@ -160,15 +139,8 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             return filter(options, current);
         }
 
-        if (isRestore) {
-            if (position == 2) return filter(getOwnRestoreCodes(player, true), current);
-            if (position == 3) return filter(List.of("key["), current);
-            return List.of();
-        }
-
-        if (isDelete) {
-            if (position == 2) return filter(getOwnRestoreCodes(player, false), current);
-            if (position == 3) return filter(List.of("key["), current);
+        if (isDelete || isUnbroken) {
+            if (position == 2) return filter(List.of("key["), current);
             return List.of();
         }
 
@@ -186,17 +158,6 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         if (position == 4) return filter(List.of("sell", "buy"), current);
         if (position == 5) return filter(List.of("key["), current);
         return List.of();
-    }
-
-    /** onlyLost = true -> тільки LOST-магазини гравця (для restore). false -> усі його магазини (для delete). */
-    private List<String> getOwnRestoreCodes(Player player, boolean onlyLost) {
-        List<String> codes = new ArrayList<>();
-        for (Shop shop : shopManager.getShops()) {
-            if (!shop.getOwner().equals(player.getUniqueId())) continue;
-            if (onlyLost && !shop.isLost()) continue;
-            codes.add(shop.getRestoreCode());
-        }
-        return codes;
     }
 
     private List<String> getItemNames() {
@@ -327,26 +288,31 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        if (shopManager.isShopAt(targetBlock.getLocation())) {
-            player.sendMessage("§cНа цій скрині вже є магазин.");
+        Shop existing = shopManager.getShop(targetBlock.getLocation());
+
+        if (existing != null) {
+            if (existing.isBroken()) {
+                player.sendMessage("§cНа цьому місці знаходиться зламаний магазин.");
+                player.sendMessage("§7Відновіть: /cshop unbroken key[...]");
+                player.sendMessage("§7Або видаліть: /cshop delete key[...]");
+            } else {
+                player.sendMessage("§cНа цій скрині вже є магазин.");
+            }
             return;
         }
 
         UUID id = UUID.randomUUID();
         UUID owner = player.getUniqueId();
-        String restoreCode = generateRestoreCode();
 
         Shop shop = new Shop(
                 id, owner, targetBlock.getLocation(),
-                item, amount, price, type, key,
-                restoreCode, false
+                item, amount, price, type, key
         );
 
         shopManager.addShop(shop);
         shopStorage.saveShops();
 
         player.sendMessage("§aМагазин успішно створено!");
-        player.sendMessage("§7Код відновлення (збережи його): §e" + restoreCode);
 
         if (isDoubleChest(targetBlock)) {
             player.sendMessage("§e⚠️ Ви створюєте магазин на подвійній скрині.");
@@ -447,6 +413,11 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
+        if (shop.isBroken()) {
+            player.sendMessage("§cЦей магазин зламано. Спочатку виконай /cshop unbroken key[...]");
+            return;
+        }
+
         if (!shop.getKey().equals(providedKey)) {
             player.sendMessage("§cНевірний ключ. Магазин не змінено.");
             return;
@@ -463,47 +434,17 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
     }
 
     // -------------------------------------------------------------------
-    // ВІДНОВЛЕННЯ
+    // ВІДНОВЛЕННЯ ПІСЛЯ ЗЛАМУ
     // -------------------------------------------------------------------
 
-    private void handleRestoreList(Player player) {
+    private void handleUnbroken(Player player, String[] args) {
 
-        List<Shop> lost = new ArrayList<>();
-        for (Shop shop : shopManager.getShops()) {
-            if (shop.getOwner().equals(player.getUniqueId()) && shop.isLost()) {
-                lost.add(shop);
-            }
-        }
-
-        player.sendMessage("§c=== Lost Shops ===");
-
-        if (lost.isEmpty()) {
-            player.sendMessage("§7У тебе немає втрачених магазинів.");
+        if (args.length < 2) {
+            player.sendMessage("§cВикористання: /cshop unbroken key[KEY]");
             return;
         }
 
-        int number = 1;
-        for (Shop shop : lost) {
-            player.sendMessage("§f" + number + ".");
-            player.sendMessage("§7Name: §f" + formatMaterialName(shop.getItem()));
-            player.sendMessage("§7Restore code: §e" + shop.getRestoreCode());
-            player.sendMessage("§7Coordinates: §f" + formatCoords(shop.getLocation()));
-            player.sendMessage("");
-            number++;
-        }
-
-        player.sendMessage("§7Відновити: §f/cshop restore КОД key[KEY]");
-    }
-
-    private void handleRestoreExecute(Player player, String[] args) {
-
-        if (args.length < 3) {
-            player.sendMessage("§cВикористання: /cshop restore КОД key[KEY]");
-            return;
-        }
-
-        String code = args[1];
-        String keyArg = args[2];
+        String keyArg = args[1];
 
         if (!(keyArg.startsWith("key[") && keyArg.endsWith("]"))) {
             player.sendMessage("§cВкажи ключ у форматі key[ТЕКСТ].");
@@ -512,20 +453,27 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
         String providedKey = keyArg.substring(4, keyArg.length() - 1);
 
-        Shop shop = findByRestoreCode(code);
+        Block targetBlock = player.getTargetBlockExact(MAX_TARGET_DISTANCE);
+
+        if (targetBlock == null || targetBlock.getType() != Material.CHEST) {
+            player.sendMessage("§cПостав скриню на місце зламаного магазину і дивись на неї.");
+            return;
+        }
+
+        Shop shop = shopManager.getShop(targetBlock.getLocation());
 
         if (shop == null) {
-            player.sendMessage("§cМагазин з таким кодом не знайдено.");
+            player.sendMessage("§cНа цьому місці немає зламаного магазину.");
             return;
         }
 
-        if (!shop.getOwner().equals(player.getUniqueId())) {
+        if (!shop.isBroken()) {
+            player.sendMessage("§cЦей магазин не зламаний, відновлювати нічого.");
+            return;
+        }
+
+        if (!shop.getOwner().equals(player.getUniqueId()) && !player.hasPermission("mivex.admin")) {
             player.sendMessage("§cЦе не твій магазин.");
-            return;
-        }
-
-        if (!shop.isLost()) {
-            player.sendMessage("§cЦей магазин не втрачений, відновлювати нічого.");
             return;
         }
 
@@ -534,25 +482,10 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        Block targetBlock = player.getTargetBlockExact(MAX_TARGET_DISTANCE);
-
-        if (targetBlock == null || targetBlock.getType() != Material.CHEST) {
-            player.sendMessage("§cДивись на нову звичайну скриню, яка стане цим магазином.");
-            return;
-        }
-
-        Location newLocation = targetBlock.getLocation();
-
-        if (shopManager.isShopAt(newLocation)) {
-            player.sendMessage("§cЦя скриня вже є іншим магазином.");
-            return;
-        }
-
-        shop.setLocation(newLocation);
-        shop.setLost(false);
+        shop.setBroken(false);
         shopStorage.saveShops();
 
-        player.sendMessage("§aМагазин відновлено на цій скрині.");
+        player.sendMessage("§aМагазин відновлено і знову працює!");
     }
 
     // -------------------------------------------------------------------
@@ -561,17 +494,17 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
     private void handleDelete(Player player, String[] args) {
 
-        if (args.length < 2) {
-            player.sendMessage("§cВикористання: /cshop delete КОД key[KEY]");
-            player.sendMessage("§7(адмін може без ключа)");
+        Block targetBlock = player.getTargetBlockExact(MAX_TARGET_DISTANCE);
+
+        if (targetBlock == null || targetBlock.getType() != Material.CHEST) {
+            player.sendMessage("§cПостав скриню на місце магазину (якщо він зламаний) і дивись на неї.");
             return;
         }
 
-        String code = args[1];
-        Shop shop = findByRestoreCode(code);
+        Shop shop = shopManager.getShop(targetBlock.getLocation());
 
         if (shop == null) {
-            player.sendMessage("§cМагазин з таким кодом не знайдено.");
+            player.sendMessage("§cЦя скриня не є магазином.");
             return;
         }
 
@@ -584,12 +517,12 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         }
 
         if (!isAdmin) {
-            if (args.length < 3) {
-                player.sendMessage("§cВкажи ключ: /cshop delete " + code + " key[KEY]");
+            if (args.length < 2) {
+                player.sendMessage("§cВикористання: /cshop delete key[KEY]");
                 return;
             }
 
-            String keyArg = args[2];
+            String keyArg = args[1];
 
             if (!(keyArg.startsWith("key[") && keyArg.endsWith("]"))) {
                 player.sendMessage("§cВкажи ключ у форматі key[ТЕКСТ].");
@@ -610,15 +543,6 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         player.sendMessage("§aМагазин видалено назавжди. На цьому місці тепер можна створити новий.");
     }
 
-    private Shop findByRestoreCode(String code) {
-        for (Shop shop : shopManager.getShops()) {
-            if (shop.getRestoreCode().equalsIgnoreCase(code)) {
-                return shop;
-            }
-        }
-        return null;
-    }
-
     // -------------------------------------------------------------------
     // СПИСКИ
     // -------------------------------------------------------------------
@@ -628,15 +552,15 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         List<Shop> ownShops = new ArrayList<>();
 
         for (Shop shop : shopManager.getShops()) {
-            if (shop.getOwner().equals(player.getUniqueId()) && !shop.isLost()) {
+            if (shop.getOwner().equals(player.getUniqueId())) {
                 ownShops.add(shop);
             }
         }
 
-        player.sendMessage("§b=== Active shops ===");
+        player.sendMessage("§b=== Твої магазини ===");
 
         if (ownShops.isEmpty()) {
-            player.sendMessage("§7У тебе немає активних магазинів.");
+            player.sendMessage("§7У тебе немає магазинів.");
             return;
         }
 
@@ -664,20 +588,16 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         }
 
         int activeCount = 0;
-        int lostCount = 0;
+        int brokenCount = 0;
 
         for (Shop shop : allShops) {
             printAdminShopDetails(player, shop);
-            if (shop.isLost()) {
-                lostCount++;
-            } else {
-                activeCount++;
-            }
+            if (shop.isBroken()) brokenCount++; else activeCount++;
         }
 
         player.sendMessage("§bВсього магазинів: " + allShops.size());
         player.sendMessage("§aACTIVE: " + activeCount);
-        player.sendMessage("§cLOST: " + lostCount);
+        player.sendMessage("§cBROKEN: " + brokenCount);
     }
 
     private void handleListPlayer(Player player, String targetName) {
@@ -705,91 +625,16 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         }
 
         int activeCount = 0;
-        int lostCount = 0;
+        int brokenCount = 0;
 
         for (Shop shop : targetShops) {
             printAdminShopDetails(player, shop);
-            if (shop.isLost()) {
-                lostCount++;
-            } else {
-                activeCount++;
-            }
+            if (shop.isBroken()) brokenCount++; else activeCount++;
         }
 
         player.sendMessage("§bВсього магазинів: " + targetShops.size());
         player.sendMessage("§aACTIVE: " + activeCount);
-        player.sendMessage("§cLOST: " + lostCount);
-    }
-
-    private void handleListDisactivated(Player player) {
-
-        if (!player.hasPermission("mivex.admin")) {
-            player.sendMessage("§cУ тебе немає прав на цю команду.");
-            return;
-        }
-
-        List<Shop> lostShops = getLostShopsSnapshot();
-
-        if (lostShops.isEmpty()) {
-            player.sendMessage("§7Немає втрачених магазинів.");
-            return;
-        }
-
-        player.sendMessage("§cВтрачені магазини:");
-
-        int number = 1;
-        for (Shop shop : lostShops) {
-            OfflinePlayer owner = Bukkit.getOfflinePlayer(shop.getOwner());
-            String ownerName = owner.getName() != null ? owner.getName() : "Невідомий";
-
-            player.sendMessage("§7#" + number + " §f" + ownerName
-                    + " §7- {§f" + shop.getItem() + " §7- §e" + shop.getPrice() + "§7}"
-                    + " §7Код: §e" + shop.getRestoreCode());
-            number++;
-        }
-
-        player.sendMessage("§bВсього втрачених: " + lostShops.size());
-        player.sendMessage("§7Видалити: /cshop list disactivated remove [номер]");
-    }
-
-    private void handleRemoveDisactivated(Player player, String numberArg) {
-
-        if (!player.hasPermission("mivex.admin")) {
-            player.sendMessage("§cУ тебе немає прав на цю команду.");
-            return;
-        }
-
-        int index;
-        try {
-            index = Integer.parseInt(numberArg);
-        } catch (NumberFormatException e) {
-            player.sendMessage("§cНомер має бути числом.");
-            return;
-        }
-
-        List<Shop> lostShops = getLostShopsSnapshot();
-
-        if (index < 1 || index > lostShops.size()) {
-            player.sendMessage("§cНемає магазину під номером " + index + ".");
-            return;
-        }
-
-        Shop shop = lostShops.get(index - 1);
-
-        shopManager.removeShop(shop.getLocation());
-        shopStorage.saveShops();
-
-        player.sendMessage("§aВтрачений магазин №" + index + " видалено назавжди.");
-    }
-
-    private List<Shop> getLostShopsSnapshot() {
-        List<Shop> lostShops = new ArrayList<>();
-        for (Shop shop : shopManager.getShops()) {
-            if (shop.isLost()) {
-                lostShops.add(shop);
-            }
-        }
-        return lostShops;
+        player.sendMessage("§cBROKEN: " + brokenCount);
     }
 
     private void handleAbout(Player player) {
@@ -804,6 +649,9 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
     // -------------------------------------------------------------------
 
     private void printOwnShopDetails(Player player, Shop shop) {
+        String status = shop.isBroken() ? "§c🔴 BROKEN" : "§a🟢 ACTIVE";
+
+        player.sendMessage(status);
         player.sendMessage("§fНазва: §7" + formatMaterialName(shop.getItem()));
         player.sendMessage("§fТовар: §7" + shop.getItem() + " x" + shop.getAmount());
         player.sendMessage("§fЦіна: §7" + shop.getPrice());
@@ -815,13 +663,12 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
     private void printAdminShopDetails(Player player, Shop shop) {
         OfflinePlayer owner = Bukkit.getOfflinePlayer(shop.getOwner());
         String ownerName = owner.getName() != null ? owner.getName() : "Невідомий";
-        String status = shop.isLost() ? "§cLOST" : "§aACTIVE";
+        String status = shop.isBroken() ? "§c🔴 BROKEN" : "§a🟢 ACTIVE";
 
+        player.sendMessage(status);
         player.sendMessage("§fНазва: §7" + formatMaterialName(shop.getItem()));
         player.sendMessage("§fТовар: §7" + shop.getItem() + " x" + shop.getAmount());
         player.sendMessage("§fЦіна: §7" + shop.getPrice());
-        player.sendMessage("§fКод відновлення: §e" + shop.getRestoreCode());
-        player.sendMessage("§fСтан: " + status);
         player.sendMessage("§fВласник: §7" + ownerName);
         player.sendMessage("§fКоординати: §7" + formatCoords(shop.getLocation()));
         player.sendMessage("§7--------------------");
@@ -855,14 +702,6 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             if (word.isEmpty()) continue;
             if (sb.length() > 0) sb.append(" ");
             sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
-        }
-        return sb.toString();
-    }
-
-    private String generateRestoreCode() {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < RESTORE_CODE_LENGTH; i++) {
-            sb.append(RESTORE_CODE_ALPHABET.charAt(random.nextInt(RESTORE_CODE_ALPHABET.length())));
         }
         return sb.toString();
     }

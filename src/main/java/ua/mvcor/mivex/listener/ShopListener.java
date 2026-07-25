@@ -36,14 +36,17 @@ public class ShopListener implements Listener {
     @EventHandler
     public void onBreak(BlockBreakEvent event) {
         Shop shop = shopManager.getShop(event.getBlock().getLocation());
-        if (shop == null) return;
+        if (shop == null || shop.isBroken()) return;
 
-        shop.setLost(true);
+        shop.setBroken(true);
         shopStorage.saveShops();
 
         if (event.getPlayer().getUniqueId().equals(shop.getOwner())) {
-            event.getPlayer().sendMessage("§eТвій магазин зламано і позначено як LOST.");
-            event.getPlayer().sendMessage("§7Код відновлення: §e" + shop.getRestoreCode());
+            event.getPlayer().sendMessage("§c⚠ Ваш магазин було зламано!");
+            event.getPlayer().sendMessage("§7Товар: §f" + shop.getItem());
+            event.getPlayer().sendMessage("§7Ціна: §f" + shop.getPrice());
+            event.getPlayer().sendMessage("§7Координати: §f" + formatCoords(shop.getLocation()));
+            event.getPlayer().sendMessage("§7Постав скриню на це саме місце і виконай /cshop unbroken key[...]");
         }
     }
 
@@ -66,15 +69,17 @@ public class ShopListener implements Listener {
             return;
         }
 
-        if (shop.isLost()) {
-            event.setCancelled(true);
-            event.getPlayer().sendMessage("§cЦей магазин втрачено (LOST). Власник має відновити його через /cshop restore.");
-            return;
-        }
-
         event.setCancelled(true);
 
         Player player = event.getPlayer();
+
+        if (shop.isBroken()) {
+            player.sendMessage("§cЦей магазин зламано і не працює.");
+            player.sendMessage("§7Відновіть: /cshop unbroken key[...]");
+            player.sendMessage("§7Або видаліть: /cshop delete key[...]");
+            return;
+        }
+
         ItemStack handItem = player.getInventory().getItemInMainHand();
 
         String keyText = getKeyText(handItem);
@@ -211,5 +216,10 @@ public class ShopListener implements Listener {
             }
         }
         return total;
+    }
+
+    private String formatCoords(org.bukkit.Location loc) {
+        if (loc == null || loc.getWorld() == null) return "невідомо";
+        return loc.getWorld().getName() + " " + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ();
     }
 }

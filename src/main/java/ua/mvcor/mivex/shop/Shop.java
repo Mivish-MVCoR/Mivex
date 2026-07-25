@@ -10,16 +10,15 @@ public class Shop {
     private final UUID id;
     private final UUID owner;
 
-    private Location location;
+    private final Location location;
 
     private Material item;
     private int amount;
     private int price;
     private String type;
     private final String key;
-    private final String restoreCode;
 
-    private boolean lost;
+    private boolean broken;
 
     public Shop(UUID id,
                 UUID owner,
@@ -28,9 +27,7 @@ public class Shop {
                 int amount,
                 int price,
                 String type,
-                String key,
-                String restoreCode,
-                boolean lost) {
+                String key) {
 
         this.id = id;
         this.owner = owner;
@@ -40,8 +37,7 @@ public class Shop {
         this.price = price;
         this.type = type;
         this.key = key;
-        this.restoreCode = restoreCode;
-        this.lost = lost;
+        this.broken = false;
     }
 
     public UUID getId() {
@@ -54,10 +50,6 @@ public class Shop {
 
     public Location getLocation() {
         return location;
-    }
-
-    public void setLocation(Location location) {
-        this.location = location;
     }
 
     public Material getItem() {
@@ -96,15 +88,11 @@ public class Shop {
         return key;
     }
 
-    public String getRestoreCode() {
-        return restoreCode;
+    public boolean isBroken() {
+        return broken;
     }
 
-    public boolean isLost() {
-        return lost;
-    }
-
-    public void setLost(boolean lost) {
-        this.lost = lost;
+    public void setBroken(boolean broken) {
+        this.broken = broken;
     }
 }

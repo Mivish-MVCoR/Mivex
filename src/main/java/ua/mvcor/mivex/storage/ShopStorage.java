@@ -67,8 +67,7 @@ public class ShopStorage {
             config.set(path + ".type", shop.getType());
             config.set(path + ".key", shop.getKey());
 
-            config.set(path + ".restoreCode", shop.getRestoreCode());
-            config.set(path + ".lost", shop.isLost());
+            config.set(path + ".broken", shop.isBroken());
         }
 
         try {
@@ -78,11 +77,6 @@ public class ShopStorage {
         }
     }
 
-    /**
-     * Перед перезаписом shops.yml копіює поточний файл у shops.backup.yml.
-     * Files.copy(...) — вбудований спосіб Java скопіювати файл на диску;
-     * REPLACE_EXISTING означає "якщо бекап вже є, перезаписати його новим".
-     */
     private void backupCurrentFile() {
         if (!file.exists()) return;
 
@@ -121,10 +115,10 @@ public class ShopStorage {
                     config.getInt(path + ".amount"),
                     config.getInt(path + ".price"),
                     config.getString(path + ".type"),
-                    config.getString(path + ".key"),
-                    config.getString(path + ".restoreCode"),
-                    config.getBoolean(path + ".lost")
+                    config.getString(path + ".key")
             );
+
+            shop.setBroken(config.getBoolean(path + ".broken"));
 
             shopManager.addShop(shop);
         }
