@@ -6,12 +6,14 @@ import ua.mvcor.mivex.command.MivexCommand;
 import ua.mvcor.mivex.config.BlockedItemsConfig;
 import ua.mvcor.mivex.listener.ShopListener;
 import ua.mvcor.mivex.shop.ShopManager;
+import ua.mvcor.mivex.storage.BrokenInventoryStorage;
 import ua.mvcor.mivex.storage.ShopStorage;
 
 public class Mivex extends JavaPlugin {
 
     private ShopManager shopManager;
     private ShopStorage shopStorage;
+    private BrokenInventoryStorage brokenInventoryStorage;
 
     @Override
     public void onEnable() {
@@ -21,15 +23,17 @@ public class Mivex extends JavaPlugin {
 
         shopManager = new ShopManager();
         shopStorage = new ShopStorage(this, shopManager);
+        brokenInventoryStorage = new BrokenInventoryStorage(this);
 
         shopStorage.loadShops();
 
-        CShopCommand cShopCommand = new CShopCommand(shopManager, shopStorage);
+        CShopCommand cShopCommand = new CShopCommand(shopManager, shopStorage, brokenInventoryStorage);
         getCommand("cshop").setExecutor(cShopCommand);
         getCommand("cshop").setTabCompleter(cShopCommand);
         getCommand("mivex").setExecutor(new MivexCommand());
 
-        getServer().getPluginManager().registerEvents(new ShopListener(shopManager, shopStorage), this);
+        getServer().getPluginManager().registerEvents(
+                new ShopListener(shopManager, shopStorage, brokenInventoryStorage), this);
 
         getLogger().info("Mivex enabled!");
     }

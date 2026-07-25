@@ -1,6 +1,7 @@
 package ua.mvcor.mivex.listener;
 
 import org.bukkit.Material;
+import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Chest;
@@ -16,6 +17,7 @@ import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
 import ua.mvcor.mivex.shop.Shop;
 import ua.mvcor.mivex.shop.ShopManager;
+import ua.mvcor.mivex.storage.BrokenInventoryStorage;
 import ua.mvcor.mivex.storage.ShopStorage;
 
 import java.util.Map;
@@ -27,10 +29,12 @@ public class ShopListener implements Listener {
 
     private final ShopManager shopManager;
     private final ShopStorage shopStorage;
+    private final BrokenInventoryStorage inventoryStorage;
 
-    public ShopListener(ShopManager shopManager, ShopStorage shopStorage) {
+    public ShopListener(ShopManager shopManager, ShopStorage shopStorage, BrokenInventoryStorage inventoryStorage) {
         this.shopManager = shopManager;
         this.shopStorage = shopStorage;
+        this.inventoryStorage = inventoryStorage;
     }
 
     @EventHandler
@@ -38,15 +42,34 @@ public class ShopListener implements Listener {
         Shop shop = shopManager.getShop(event.getBlock().getLocation());
         if (shop == null || shop.isBroken()) return;
 
+        BlockState state = event.getBlock().getState();
+        if (!(state instanceof Chest)) return;
+
+        Chest chest = (Chest) state;
+        ItemStack[] contents = chest.getInventory().getContents().clone();
+
+        // Атомарність: спершу зберігаємо файл, і лише ПІСЛЯ успіху міняємо стан магазину.
+        boolean saved = inventoryStorage.saveInventory(shop.getId(), contents);
+
+        if (!saved) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage("§cНе вдалося зберегти інвентар магазину. Скриня НЕ зламана, спробуй ще раз.");
+            return;
+        }
+
+        // Файл вже надійно збережений — тепер можна безпечно очистити скриню,
+        // щоб предмети не випали на землю під час фактичного руйнування блоку.
+        chest.getInventory().clear();
+
         shop.setBroken(true);
         shopStorage.saveShops();
 
         if (event.getPlayer().getUniqueId().equals(shop.getOwner())) {
-            event.getPlayer().sendMessage("§c⚠ Ваш магазин було зламано!");
+            event.getPlayer().sendMessage("§c⚠ Ваш магазин зламано і переведено у стан BROKEN!");
             event.getPlayer().sendMessage("§7Товар: §f" + shop.getItem());
             event.getPlayer().sendMessage("§7Ціна: §f" + shop.getPrice());
             event.getPlayer().sendMessage("§7Координати: §f" + formatCoords(shop.getLocation()));
-            event.getPlayer().sendMessage("§7Постав скриню на це саме місце і виконай /cshop unbroken key[...]");
+            event.getPlayer().sendMessage("§7Постав нову §fпорожню§7 скриню на це місце і виконай /cshop unbroken key[...]");
         }
     }
 
@@ -74,9 +97,8 @@ public class ShopListener implements Listener {
         Player player = event.getPlayer();
 
         if (shop.isBroken()) {
-            player.sendMessage("§cЦей магазин зламано і не працює.");
+            player.sendMessage("§cЦей магазин зламано (BROKEN) і не працює.");
             player.sendMessage("§7Відновіть: /cshop unbroken key[...]");
-            player.sendMessage("§7Або видаліть: /cshop delete key[...]");
             return;
         }
 
@@ -218,7 +240,7 @@ public class ShopListener implements Listener {
         return total;
     }
 
-    private String formatCoords(org.bukkit.Location loc) {
+    private String formatCoords(Location loc) {
         if (loc == null || loc.getWorld() == null) return "невідомо";
         return loc.getWorld().getName() + " " + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ();
     }

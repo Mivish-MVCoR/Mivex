@@ -12,9 +12,12 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
 import ua.mvcor.mivex.config.BlockedItemsConfig;
 import ua.mvcor.mivex.shop.Shop;
 import ua.mvcor.mivex.shop.ShopManager;
+import ua.mvcor.mivex.storage.BrokenInventoryStorage;
 import ua.mvcor.mivex.storage.ShopStorage;
 
 import java.util.ArrayList;
@@ -34,10 +37,12 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
     private final ShopManager shopManager;
     private final ShopStorage shopStorage;
+    private final BrokenInventoryStorage inventoryStorage;
 
-    public CShopCommand(ShopManager shopManager, ShopStorage shopStorage) {
+    public CShopCommand(ShopManager shopManager, ShopStorage shopStorage, BrokenInventoryStorage inventoryStorage) {
         this.shopManager = shopManager;
         this.shopStorage = shopStorage;
+        this.inventoryStorage = inventoryStorage;
     }
 
     @Override
@@ -55,44 +60,45 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        if (args[0].equalsIgnoreCase("unbroken")) {
-            handleUnbroken(player, args);
-            return true;
-        }
+        String action = args[0].toLowerCase();
 
-        if (args[0].equalsIgnoreCase("delete")) {
-            handleDelete(player, args);
-            return true;
-        }
-
-        if (args[0].equalsIgnoreCase("edit")) {
-            handleEdit(player, args);
-            return true;
-        }
-
-        if (args[0].equalsIgnoreCase("mylist")) {
-            handleMyList(player);
-            return true;
-        }
-
-        if (args[0].equalsIgnoreCase("list")) {
-
-            if (args.length == 1 || args[1].equalsIgnoreCase("allplayer")) {
-                handleListAll(player);
+        switch (action) {
+            case "sell":
+                handleCreate(player, args, "sell");
                 return true;
-            }
-
-            handleListPlayer(player, args[1]);
-            return true;
+            case "buy":
+                handleCreate(player, args, "buy");
+                return true;
+            case "edit":
+                handleEdit(player, args);
+                return true;
+            case "delete":
+                handleDelete(player, args);
+                return true;
+            case "unbroken":
+                handleUnbroken(player, args);
+                return true;
+            case "mylist":
+                handleMyList(player);
+                return true;
+            case "list":
+                if (args.length >= 2) {
+                    handleListPlayer(player, args[1]);
+                } else {
+                    handleListAll(player);
+                }
+                return true;
+            case "about":
+                handleAbout(player);
+                return true;
+            case "help":
+                sendHelp(player);
+                return true;
+            default:
+                player.sendMessage("§cНевідома дія: " + args[0]);
+                player.sendMessage("§7Використай /cshop help для списку команд.");
+                return true;
         }
-
-        if (args[0].equalsIgnoreCase("about")) {
-            handleAbout(player);
-            return true;
-        }
-
-        handleCreate(player, args);
-        return true;
     }
 
     // -------------------------------------------------------------------
@@ -101,17 +107,17 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
     private void sendHelp(Player player) {
         player.sendMessage("§b=== Mivex Shop — команди ===");
-        player.sendMessage("§e/cshop unbroken key[KEY] §f- відновити зламаний магазин");
-        player.sendMessage("§e/cshop delete key[KEY] §f- видалити магазин, на який дивишся");
-        player.sendMessage("§e/cshop mylist §f- твої магазини");
-        player.sendMessage("§e/cshop edit KEY ITEM amXX prYY sell/buy §f- редагувати");
-        player.sendMessage("§7/cshop list [player|allplayer] §7(адмін)");
-        player.sendMessage("§7/cshop about");
-        player.sendMessage("");
-        player.sendMessage("§aСтворення магазину:");
-        player.sendMessage("§f/cshop ITEM amXX prYY sell/buy key[TEXT]");
-        player.sendMessage("§7Приклад: §f/cshop OAK_DOOR am32 pr2 sell key[MV]");
+        player.sendMessage("§f/cshop sell key[KEY] ITEM AMOUNT PRICE §7- створити SELL-магазин");
+        player.sendMessage("§f/cshop buy key[KEY] ITEM AMOUNT PRICE §7- створити BUY-магазин");
+        player.sendMessage("§7Приклад: §f/cshop sell key[MV] OAK_DOOR 32 5");
         player.sendMessage("§7(дивись на звичайну скриню в момент виконання команди)");
+        player.sendMessage("");
+        player.sendMessage("§e/cshop edit key[KEY] sell/buy ITEM AMOUNT PRICE §f- редагувати");
+        player.sendMessage("§e/cshop unbroken key[KEY] §f- відновити зламаний магазин");
+        player.sendMessage("§e/cshop delete key[KEY] §f- видалити магазин (не BROKEN)");
+        player.sendMessage("§e/cshop mylist §f- твої магазини");
+        player.sendMessage("§7/cshop list [player] §7(адмін)");
+        player.sendMessage("§7/cshop about");
     }
 
     // -------------------------------------------------------------------
@@ -123,40 +129,37 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
         int position = args.length;
         String current = args.length > 0 ? args[args.length - 1] : "";
-        boolean isEdit = args.length > 0 && args[0].equalsIgnoreCase("edit");
-        boolean isDelete = args.length > 0 && args[0].equalsIgnoreCase("delete");
-        boolean isUnbroken = args.length > 0 && args[0].equalsIgnoreCase("unbroken");
+        String action = args.length > 0 ? args[0].toLowerCase() : "";
 
         if (position == 1) {
-            List<String> options = new ArrayList<>();
-            options.add("unbroken");
-            options.add("delete");
-            options.add("mylist");
-            options.add("edit");
-            options.add("list");
-            options.add("about");
-            options.addAll(getItemNames());
+            List<String> options = List.of(
+                    "about", "buy", "delete", "edit", "help", "list", "mylist", "sell", "unbroken"
+            );
             return filter(options, current);
         }
 
-        if (isDelete || isUnbroken) {
+        if (action.equals("delete") || action.equals("unbroken")) {
             if (position == 2) return filter(List.of("key["), current);
             return List.of();
         }
 
-        if (isEdit) {
-            if (position == 2) return List.of();
+        if (action.equals("sell") || action.equals("buy")) {
+            if (position == 2) return filter(List.of("key["), current);
             if (position == 3) return filter(getItemNames(), current);
-            if (position == 4) return filter(getAmountSuggestions(), current);
-            if (position == 5) return filter(getPriceSuggestions(), current);
-            if (position == 6) return filter(List.of("sell", "buy"), current);
+            if (position == 4) return filter(getNumberSuggestions(), current);
+            if (position == 5) return filter(getNumberSuggestions(), current);
             return List.of();
         }
 
-        if (position == 2) return filter(getAmountSuggestions(), current);
-        if (position == 3) return filter(getPriceSuggestions(), current);
-        if (position == 4) return filter(List.of("sell", "buy"), current);
-        if (position == 5) return filter(List.of("key["), current);
+        if (action.equals("edit")) {
+            if (position == 2) return filter(List.of("key["), current);
+            if (position == 3) return filter(List.of("sell", "buy"), current);
+            if (position == 4) return filter(getItemNames(), current);
+            if (position == 5) return filter(getNumberSuggestions(), current);
+            if (position == 6) return filter(getNumberSuggestions(), current);
+            return List.of();
+        }
+
         return List.of();
     }
 
@@ -171,18 +174,10 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         return names;
     }
 
-    private List<String> getAmountSuggestions() {
+    private List<String> getNumberSuggestions() {
         List<String> options = new ArrayList<>();
         for (int i = 1; i <= TAB_SUGGESTION_LIMIT; i++) {
-            options.add("am" + i);
-        }
-        return options;
-    }
-
-    private List<String> getPriceSuggestions() {
-        List<String> options = new ArrayList<>();
-        for (int i = 1; i <= TAB_SUGGESTION_LIMIT; i++) {
-            options.add("pr" + i);
+            options.add(String.valueOf(i));
         }
         return options;
     }
@@ -198,16 +193,30 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
     }
 
     // -------------------------------------------------------------------
-    // СТВОРЕННЯ
+    // СТВОРЕННЯ: /cshop sell|buy key[KEY] ITEM AMOUNT PRICE
     // -------------------------------------------------------------------
 
-    private void handleCreate(Player player, String[] args) {
+    private void handleCreate(Player player, String[] args, String type) {
 
-        Material item = Material.matchMaterial(args[0]);
+        if (args.length < 5) {
+            player.sendMessage("§cВикористання: /cshop " + type + " key[KEY] ITEM AMOUNT PRICE");
+            return;
+        }
 
+        String key = parseKeyArg(args[1]);
+        if (key == null) {
+            player.sendMessage("§cВкажи ключ у форматі key[ТЕКСТ].");
+            return;
+        }
+
+        if (!KEY_PATTERN.matcher(key).matches()) {
+            player.sendMessage("§cКлюч може містити лише англійські літери, цифри, \"_\" та \"-\".");
+            return;
+        }
+
+        Material item = Material.matchMaterial(args[2]);
         if (item == null) {
-            player.sendMessage("§cНевідомий предмет: " + args[0]);
-            player.sendMessage("§7Підказка: /cshop ITEM amXX prYY sell/buy key[TEXT]");
+            player.sendMessage("§cНевідомий предмет: " + args[2]);
             return;
         }
 
@@ -216,30 +225,13 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        int amount = 0;
-        int price = 0;
-        String type = null;
-        String key = null;
-
+        int amount;
+        int price;
         try {
-            for (int i = 1; i < args.length; i++) {
-                String arg = args[i];
-
-                if (arg.startsWith("am")) {
-                    amount = Integer.parseInt(arg.substring(2));
-                } else if (arg.startsWith("pr")) {
-                    price = Integer.parseInt(arg.substring(2));
-                } else if (arg.equalsIgnoreCase("sell")) {
-                    type = "sell";
-                } else if (arg.equalsIgnoreCase("buy")) {
-                    type = "buy";
-                } else if (arg.startsWith("key[") && arg.endsWith("]")) {
-                    key = arg.substring(4, arg.length() - 1);
-                }
-            }
+            amount = Integer.parseInt(args[3]);
+            price = Integer.parseInt(args[4]);
         } catch (NumberFormatException e) {
             player.sendMessage("§cКількість та ціна повинні бути числами.");
-            player.sendMessage("§7Підказка: amXX (наприклад am32), prYY (наприклад pr2)");
             return;
         }
 
@@ -250,22 +242,6 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
         if (price <= 0 || price > MAX_PRICE) {
             player.sendMessage("§cЦіна повинна бути від 1 до " + MAX_PRICE + ".");
-            return;
-        }
-
-        if (type == null) {
-            player.sendMessage("§cВкажи тип магазину: sell або buy.");
-            return;
-        }
-
-        if (key == null || key.isBlank()) {
-            player.sendMessage("§cКлюч не може бути порожнім.");
-            player.sendMessage("§7Підказка: key[MV], key[HOME], key[shop_1] тощо.");
-            return;
-        }
-
-        if (!KEY_PATTERN.matcher(key).matches()) {
-            player.sendMessage("§cКлюч може містити лише англійські літери, цифри, \"_\" та \"-\".");
             return;
         }
 
@@ -292,9 +268,8 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
         if (existing != null) {
             if (existing.isBroken()) {
-                player.sendMessage("§cНа цьому місці знаходиться зламаний магазин.");
-                player.sendMessage("§7Відновіть: /cshop unbroken key[...]");
-                player.sendMessage("§7Або видаліть: /cshop delete key[...]");
+                player.sendMessage("§cТут вже знаходиться BROKEN-магазин.");
+                player.sendMessage("§7Спочатку відновіть його (/cshop unbroken key[...]) або видаліть.");
             } else {
                 player.sendMessage("§cНа цій скрині вже є магазин.");
             }
@@ -304,10 +279,7 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         UUID id = UUID.randomUUID();
         UUID owner = player.getUniqueId();
 
-        Shop shop = new Shop(
-                id, owner, targetBlock.getLocation(),
-                item, amount, price, type, key
-        );
+        Shop shop = new Shop(id, owner, targetBlock.getLocation(), item, amount, price, type, key);
 
         shopManager.addShop(shop);
         shopStorage.saveShops();
@@ -316,43 +288,42 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
         if (isDoubleChest(targetBlock)) {
             player.sendMessage("§e⚠️ Ви створюєте магазин на подвійній скрині.");
-            player.sendMessage("");
-            player.sendMessage("§7Щоб друга половина також стала магазином,");
-            player.sendMessage("§7подивіться на неї та повторіть цю саму команду.");
-            player.sendMessage("");
-            player.sendMessage("§aПідтримка автоматичних подвійних магазинів");
-            player.sendMessage("§aз'явиться в майбутньому оновленні.");
+            player.sendMessage("§7Щоб друга половина також стала магазином, подивіться на неї та повторіть команду.");
         } else {
-            player.sendMessage("§e⚠️ Ви створили магазин на одинарній скрині.");
-            player.sendMessage("");
-            player.sendMessage("§7Якщо пізніше приєднаєте другу скриню,");
-            player.sendMessage("§7вона НЕ стане магазином автоматично.");
-            player.sendMessage("");
-            player.sendMessage("§7Щоб зробити магазин на другій половині,");
-            player.sendMessage("§7подивіться на неї та повторіть цю саму команду.");
-            player.sendMessage("");
-            player.sendMessage("§c⚠️ Увага! Поки друга половина не є магазином,");
-            player.sendMessage("§cїї можна буде відкрити без ключа.");
+            player.sendMessage("§e⚠️ Одинарна скриня: приєднана пізніше друга половина НЕ стане магазином автоматично.");
         }
     }
 
     // -------------------------------------------------------------------
-    // РЕДАГУВАННЯ
+    // РЕДАГУВАННЯ: /cshop edit key[KEY] sell/buy ITEM AMOUNT PRICE
     // -------------------------------------------------------------------
 
     private void handleEdit(Player player, String[] args) {
 
         if (args.length < 6) {
-            player.sendMessage("§cВикористання: /cshop edit KEY ITEM amXX prYY sell/buy");
+            player.sendMessage("§cВикористання: /cshop edit key[KEY] sell/buy ITEM AMOUNT PRICE");
             return;
         }
 
-        String providedKey = args[1];
+        String providedKey = parseKeyArg(args[1]);
+        if (providedKey == null) {
+            player.sendMessage("§cВкажи ключ у форматі key[ТЕКСТ].");
+            return;
+        }
 
-        Material item = Material.matchMaterial(args[2]);
+        String type;
+        if (args[2].equalsIgnoreCase("sell")) {
+            type = "sell";
+        } else if (args[2].equalsIgnoreCase("buy")) {
+            type = "buy";
+        } else {
+            player.sendMessage("§cВкажи тип: sell або buy.");
+            return;
+        }
 
+        Material item = Material.matchMaterial(args[3]);
         if (item == null) {
-            player.sendMessage("§cНевідомий предмет: " + args[2]);
+            player.sendMessage("§cНевідомий предмет: " + args[3]);
             return;
         }
 
@@ -361,24 +332,11 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        int amount = 0;
-        int price = 0;
-        String type = null;
-
+        int amount;
+        int price;
         try {
-            for (int i = 3; i < args.length; i++) {
-                String arg = args[i];
-
-                if (arg.startsWith("am")) {
-                    amount = Integer.parseInt(arg.substring(2));
-                } else if (arg.startsWith("pr")) {
-                    price = Integer.parseInt(arg.substring(2));
-                } else if (arg.equalsIgnoreCase("sell")) {
-                    type = "sell";
-                } else if (arg.equalsIgnoreCase("buy")) {
-                    type = "buy";
-                }
-            }
+            amount = Integer.parseInt(args[4]);
+            price = Integer.parseInt(args[5]);
         } catch (NumberFormatException e) {
             player.sendMessage("§cКількість та ціна повинні бути числами.");
             return;
@@ -391,11 +349,6 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
         if (price <= 0 || price > MAX_PRICE) {
             player.sendMessage("§cЦіна повинна бути від 1 до " + MAX_PRICE + ".");
-            return;
-        }
-
-        if (type == null) {
-            player.sendMessage("§cВкажи тип магазину: sell або buy.");
             return;
         }
 
@@ -414,7 +367,7 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         }
 
         if (shop.isBroken()) {
-            player.sendMessage("§cЦей магазин зламано. Спочатку виконай /cshop unbroken key[...]");
+            player.sendMessage("§cЦей магазин BROKEN. Спочатку виконай /cshop unbroken key[...]");
             return;
         }
 
@@ -434,7 +387,7 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
     }
 
     // -------------------------------------------------------------------
-    // ВІДНОВЛЕННЯ ПІСЛЯ ЗЛАМУ
+    // ВІДНОВЛЕННЯ ПІСЛЯ ЗЛАМУ: /cshop unbroken key[KEY]
     // -------------------------------------------------------------------
 
     private void handleUnbroken(Player player, String[] args) {
@@ -444,26 +397,23 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        String keyArg = args[1];
-
-        if (!(keyArg.startsWith("key[") && keyArg.endsWith("]"))) {
+        String providedKey = parseKeyArg(args[1]);
+        if (providedKey == null) {
             player.sendMessage("§cВкажи ключ у форматі key[ТЕКСТ].");
             return;
         }
 
-        String providedKey = keyArg.substring(4, keyArg.length() - 1);
-
         Block targetBlock = player.getTargetBlockExact(MAX_TARGET_DISTANCE);
 
         if (targetBlock == null || targetBlock.getType() != Material.CHEST) {
-            player.sendMessage("§cПостав скриню на місце зламаного магазину і дивись на неї.");
+            player.sendMessage("§cПостав нову скриню на місце зламаного магазину і дивись на неї.");
             return;
         }
 
         Shop shop = shopManager.getShop(targetBlock.getLocation());
 
         if (shop == null) {
-            player.sendMessage("§cНа цьому місці немає зламаного магазину.");
+            player.sendMessage("§cНа цьому місці немає магазину.");
             return;
         }
 
@@ -482,14 +432,54 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
+        BlockState state = targetBlock.getState();
+        if (!(state instanceof Chest)) {
+            player.sendMessage("§cЦя скриня недоступна.");
+            return;
+        }
+
+        Chest chest = (Chest) state;
+        Inventory chestInv = chest.getInventory();
+
+        if (!isInventoryEmpty(chestInv)) {
+            player.sendMessage("§cСкриня повинна бути порожньою для відновлення.");
+            return;
+        }
+
+        if (!inventoryStorage.exists(shop.getId())) {
+            player.sendMessage("§cФайл інвентарю не знайдено. Зверніться до адміністратора.");
+            return;
+        }
+
+        ItemStack[] contents = inventoryStorage.loadInventory(shop.getId());
+
+        if (contents == null) {
+            player.sendMessage("§cФайл інвентарю пошкоджено. Відновлення неможливе.");
+            return;
+        }
+
+        chestInv.setContents(contents);
+
+        // Видаляємо файл лише ПІСЛЯ того, як предмети вже реально в скрині.
+        inventoryStorage.deleteInventory(shop.getId());
+
         shop.setBroken(false);
         shopStorage.saveShops();
 
-        player.sendMessage("§aМагазин відновлено і знову працює!");
+        player.sendMessage("§aМагазин відновлено! Товари повернуто у скриню.");
+    }
+
+    private boolean isInventoryEmpty(Inventory inventory) {
+        for (ItemStack item : inventory.getContents()) {
+            if (item != null && item.getType() != Material.AIR) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // -------------------------------------------------------------------
-    // ВИДАЛЕННЯ
+    // ВИДАЛЕННЯ: /cshop delete key[KEY]
     // -------------------------------------------------------------------
 
     private void handleDelete(Player player, String[] args) {
@@ -497,7 +487,7 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         Block targetBlock = player.getTargetBlockExact(MAX_TARGET_DISTANCE);
 
         if (targetBlock == null || targetBlock.getType() != Material.CHEST) {
-            player.sendMessage("§cПостав скриню на місце магазину (якщо він зламаний) і дивись на неї.");
+            player.sendMessage("§cДивись на скриню-магазин, яку хочеш видалити.");
             return;
         }
 
@@ -505,6 +495,12 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
         if (shop == null) {
             player.sendMessage("§cЦя скриня не є магазином.");
+            return;
+        }
+
+        if (shop.isBroken()) {
+            player.sendMessage("§cЦей магазин BROKEN. Спочатку виконай /cshop unbroken key[...]");
+            player.sendMessage("§7Після відновлення видалення буде доступне.");
             return;
         }
 
@@ -522,14 +518,11 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
                 return;
             }
 
-            String keyArg = args[1];
-
-            if (!(keyArg.startsWith("key[") && keyArg.endsWith("]"))) {
+            String providedKey = parseKeyArg(args[1]);
+            if (providedKey == null) {
                 player.sendMessage("§cВкажи ключ у форматі key[ТЕКСТ].");
                 return;
             }
-
-            String providedKey = keyArg.substring(4, keyArg.length() - 1);
 
             if (!shop.getKey().equals(providedKey)) {
                 player.sendMessage("§cНевірний ключ.");
@@ -647,6 +640,13 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
     // -------------------------------------------------------------------
     // ДОПОМІЖНІ
     // -------------------------------------------------------------------
+
+    private String parseKeyArg(String raw) {
+        if (raw == null || !raw.startsWith("key[") || !raw.endsWith("]")) {
+            return null;
+        }
+        return raw.substring(4, raw.length() - 1);
+    }
 
     private void printOwnShopDetails(Player player, Shop shop) {
         String status = shop.isBroken() ? "§c🔴 BROKEN" : "§a🟢 ACTIVE";
