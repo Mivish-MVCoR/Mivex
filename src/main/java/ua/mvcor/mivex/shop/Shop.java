@@ -9,8 +9,8 @@ public class Shop {
 
     private final UUID id;
     private final UUID owner;
-
     private final Location location;
+    private final long createdAt;
 
     private Material item;
     private int amount;
@@ -20,6 +20,10 @@ public class Shop {
 
     private boolean broken;
 
+    private long totalCurrency;
+    private int totalTrades;
+    private long lastTradeMillis;
+
     public Shop(UUID id,
                 UUID owner,
                 Location location,
@@ -27,7 +31,8 @@ public class Shop {
                 int amount,
                 int price,
                 String type,
-                String key) {
+                String key,
+                long createdAt) {
 
         this.id = id;
         this.owner = owner;
@@ -37,7 +42,11 @@ public class Shop {
         this.price = price;
         this.type = type;
         this.key = key;
+        this.createdAt = createdAt;
         this.broken = false;
+        this.totalCurrency = 0;
+        this.totalTrades = 0;
+        this.lastTradeMillis = 0;
     }
 
     public UUID getId() {
@@ -50,6 +59,10 @@ public class Shop {
 
     public Location getLocation() {
         return location;
+    }
+
+    public long getCreatedAt() {
+        return createdAt;
     }
 
     public Material getItem() {
@@ -94,5 +107,36 @@ public class Shop {
 
     public void setBroken(boolean broken) {
         this.broken = broken;
+    }
+
+    public long getTotalCurrency() {
+        return totalCurrency;
+    }
+
+    public void setTotalCurrency(long totalCurrency) {
+        this.totalCurrency = totalCurrency;
+    }
+
+    public int getTotalTrades() {
+        return totalTrades;
+    }
+
+    public void setTotalTrades(int totalTrades) {
+        this.totalTrades = totalTrades;
+    }
+
+    public long getLastTradeMillis() {
+        return lastTradeMillis;
+    }
+
+    public void setLastTradeMillis(long lastTradeMillis) {
+        this.lastTradeMillis = lastTradeMillis;
+    }
+
+    /** Викликається лише після УСПІШНОЇ транзакції (не при скасованих операціях). */
+    public void recordTrade(int currencyAmount) {
+        this.totalTrades++;
+        this.totalCurrency += currencyAmount;
+        this.lastTradeMillis = System.currentTimeMillis();
     }
 }

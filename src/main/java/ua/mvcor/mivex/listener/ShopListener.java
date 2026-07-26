@@ -18,6 +18,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import ua.mvcor.mivex.shop.Shop;
 import ua.mvcor.mivex.shop.ShopManager;
 import ua.mvcor.mivex.storage.BrokenInventoryStorage;
+import ua.mvcor.mivex.storage.HistoryStorage;
 import ua.mvcor.mivex.storage.ShopStorage;
 
 import java.util.Map;
@@ -30,11 +31,14 @@ public class ShopListener implements Listener {
     private final ShopManager shopManager;
     private final ShopStorage shopStorage;
     private final BrokenInventoryStorage inventoryStorage;
+    private final HistoryStorage historyStorage;
 
-    public ShopListener(ShopManager shopManager, ShopStorage shopStorage, BrokenInventoryStorage inventoryStorage) {
+    public ShopListener(ShopManager shopManager, ShopStorage shopStorage,
+                        BrokenInventoryStorage inventoryStorage, HistoryStorage historyStorage) {
         this.shopManager = shopManager;
         this.shopStorage = shopStorage;
         this.inventoryStorage = inventoryStorage;
+        this.historyStorage = historyStorage;
     }
 
     @EventHandler
@@ -48,7 +52,6 @@ public class ShopListener implements Listener {
         Chest chest = (Chest) state;
         ItemStack[] contents = chest.getInventory().getContents().clone();
 
-        // Атомарність: спершу зберігаємо файл, і лише ПІСЛЯ успіху міняємо стан магазину.
         boolean saved = inventoryStorage.saveInventory(shop.getId(), contents);
 
         if (!saved) {
@@ -57,8 +60,6 @@ public class ShopListener implements Listener {
             return;
         }
 
-        // Файл вже надійно збережений — тепер можна безпечно очистити скриню,
-        // щоб предмети не випали на землю під час фактичного руйнування блоку.
         chest.getInventory().clear();
 
         shop.setBroken(true);
@@ -183,7 +184,12 @@ public class ShopListener implements Listener {
             player.getWorld().dropItemNaturally(player.getLocation(), drop);
         }
 
+        shop.recordTrade(needCurrency);
         shopStorage.saveShops();
+
+        historyStorage.addRecord(shop.getId(), new HistoryStorage.HistoryRecord(
+                player.getName(), "купив", shop.getItem().name(), needItem, needCurrency, System.currentTimeMillis()
+        ));
 
         player.sendMessage("§aКуплено " + needItem + "x " + shop.getItem() + " за " + needCurrency + " мембран.");
     }
@@ -225,7 +231,12 @@ public class ShopListener implements Listener {
             player.getWorld().dropItemNaturally(player.getLocation(), drop);
         }
 
+        shop.recordTrade(payCurrency);
         shopStorage.saveShops();
+
+        historyStorage.addRecord(shop.getId(), new HistoryStorage.HistoryRecord(
+                player.getName(), "продав", shop.getItem().name(), needItem, payCurrency, System.currentTimeMillis()
+        ));
 
         player.sendMessage("§aПродано " + needItem + "x " + shop.getItem() + " за " + payCurrency + " мембран.");
     }

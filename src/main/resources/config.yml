@@ -12,3 +12,6 @@ blocked-items:
   - JIGSAW
   - LIGHT
   - DEBUG_STICK
+history:
+  enabled: true
+  max-records: 50

@@ -68,6 +68,11 @@ public class ShopStorage {
             config.set(path + ".key", shop.getKey());
 
             config.set(path + ".broken", shop.isBroken());
+            config.set(path + ".createdAt", shop.getCreatedAt());
+
+            config.set(path + ".totalCurrency", shop.getTotalCurrency());
+            config.set(path + ".totalTrades", shop.getTotalTrades());
+            config.set(path + ".lastTradeMillis", shop.getLastTradeMillis());
         }
 
         try {
@@ -107,6 +112,8 @@ public class ShopStorage {
             UUID id = UUID.fromString(idString);
             UUID owner = UUID.fromString(config.getString(path + ".owner"));
 
+            long createdAt = config.getLong(path + ".createdAt", System.currentTimeMillis());
+
             Shop shop = new Shop(
                     id,
                     owner,
@@ -115,10 +122,14 @@ public class ShopStorage {
                     config.getInt(path + ".amount"),
                     config.getInt(path + ".price"),
                     config.getString(path + ".type"),
-                    config.getString(path + ".key")
+                    config.getString(path + ".key"),
+                    createdAt
             );
 
             shop.setBroken(config.getBoolean(path + ".broken"));
+            shop.setTotalCurrency(config.getLong(path + ".totalCurrency", 0));
+            shop.setTotalTrades(config.getInt(path + ".totalTrades", 0));
+            shop.setLastTradeMillis(config.getLong(path + ".lastTradeMillis", 0));
 
             shopManager.addShop(shop);
         }

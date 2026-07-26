@@ -18,9 +18,13 @@ import ua.mvcor.mivex.config.BlockedItemsConfig;
 import ua.mvcor.mivex.shop.Shop;
 import ua.mvcor.mivex.shop.ShopManager;
 import ua.mvcor.mivex.storage.BrokenInventoryStorage;
+import ua.mvcor.mivex.storage.HistoryStorage;
 import ua.mvcor.mivex.storage.ShopStorage;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -38,11 +42,14 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
     private final ShopManager shopManager;
     private final ShopStorage shopStorage;
     private final BrokenInventoryStorage inventoryStorage;
+    private final HistoryStorage historyStorage;
 
-    public CShopCommand(ShopManager shopManager, ShopStorage shopStorage, BrokenInventoryStorage inventoryStorage) {
+    public CShopCommand(ShopManager shopManager, ShopStorage shopStorage,
+                        BrokenInventoryStorage inventoryStorage, HistoryStorage historyStorage) {
         this.shopManager = shopManager;
         this.shopStorage = shopStorage;
         this.inventoryStorage = inventoryStorage;
+        this.historyStorage = historyStorage;
     }
 
     @Override
@@ -61,6 +68,7 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         }
 
         String action = args[0].toLowerCase();
+        String itemFilterArg = args.length >= 2 ? args[1] : null;
 
         switch (action) {
             case "sell":
@@ -79,7 +87,13 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
                 handleUnbroken(player, args);
                 return true;
             case "mylist":
-                handleMyList(player);
+                handleMyList(player, itemFilterArg);
+                return true;
+            case "stats":
+                handleStats(player, itemFilterArg);
+                return true;
+            case "history":
+                handleHistory(player, itemFilterArg);
                 return true;
             case "list":
                 if (args.length >= 2) {
@@ -110,12 +124,14 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         player.sendMessage("§f/cshop sell key[KEY] ITEM AMOUNT PRICE §7- створити SELL-магазин");
         player.sendMessage("§f/cshop buy key[KEY] ITEM AMOUNT PRICE §7- створити BUY-магазин");
         player.sendMessage("§7Приклад: §f/cshop sell key[MV] OAK_DOOR 32 5");
-        player.sendMessage("§7(дивись на звичайну скриню в момент виконання команди)");
         player.sendMessage("");
         player.sendMessage("§e/cshop edit key[KEY] sell/buy ITEM AMOUNT PRICE §f- редагувати");
         player.sendMessage("§e/cshop unbroken key[KEY] §f- відновити зламаний магазин");
         player.sendMessage("§e/cshop delete key[KEY] §f- видалити магазин (не BROKEN)");
-        player.sendMessage("§e/cshop mylist §f- твої магазини");
+        player.sendMessage("");
+        player.sendMessage("§e/cshop mylist [ITEM] §f- твої магазини");
+        player.sendMessage("§e/cshop stats [ITEM] §f- твоя економічна статистика");
+        player.sendMessage("§e/cshop history [ITEM] §f- твоя історія торгів");
         player.sendMessage("§7/cshop list [player] §7(адмін)");
         player.sendMessage("§7/cshop about");
     }
@@ -133,13 +149,18 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
         if (position == 1) {
             List<String> options = List.of(
-                    "about", "buy", "delete", "edit", "help", "list", "mylist", "sell", "unbroken"
+                    "about", "buy", "delete", "edit", "help", "history", "list", "mylist", "sell", "stats", "unbroken"
             );
             return filter(options, current);
         }
 
         if (action.equals("delete") || action.equals("unbroken")) {
             if (position == 2) return filter(List.of("key["), current);
+            return List.of();
+        }
+
+        if (action.equals("mylist") || action.equals("stats") || action.equals("history")) {
+            if (position == 2) return filter(getItemNames(), current);
             return List.of();
         }
 
@@ -279,7 +300,8 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         UUID id = UUID.randomUUID();
         UUID owner = player.getUniqueId();
 
-        Shop shop = new Shop(id, owner, targetBlock.getLocation(), item, amount, price, type, key);
+        Shop shop = new Shop(id, owner, targetBlock.getLocation(), item, amount, price, type, key,
+                System.currentTimeMillis());
 
         shopManager.addShop(shop);
         shopStorage.saveShops();
@@ -460,7 +482,6 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
         chestInv.setContents(contents);
 
-        // Видаляємо файл лише ПІСЛЯ того, як предмети вже реально в скрині.
         inventoryStorage.deleteInventory(shop.getId());
 
         shop.setBroken(false);
@@ -500,7 +521,6 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
 
         if (shop.isBroken()) {
             player.sendMessage("§cЦей магазин BROKEN. Спочатку виконай /cshop unbroken key[...]");
-            player.sendMessage("§7Після відновлення видалення буде доступне.");
             return;
         }
 
@@ -533,36 +553,159 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         shopManager.removeShop(shop.getLocation());
         shopStorage.saveShops();
 
+        // Разом з магазином видаляється й уся його статистика/історія — сміття в history/ не лишається.
+        historyStorage.deleteHistory(shop.getId());
+
         player.sendMessage("§aМагазин видалено назавжди. На цьому місці тепер можна створити новий.");
     }
 
     // -------------------------------------------------------------------
-    // СПИСКИ
+    // MYLIST / STATS / HISTORY
     // -------------------------------------------------------------------
 
-    private void handleMyList(Player player) {
+    private List<Shop> getOwnShopsFiltered(Player player, String itemFilterArg) {
 
-        List<Shop> ownShops = new ArrayList<>();
+        Material filterMaterial = null;
+        if (itemFilterArg != null) {
+            filterMaterial = Material.matchMaterial(itemFilterArg);
+        }
 
+        List<Shop> result = new ArrayList<>();
         for (Shop shop : shopManager.getShops()) {
-            if (shop.getOwner().equals(player.getUniqueId())) {
-                ownShops.add(shop);
-            }
+            if (!shop.getOwner().equals(player.getUniqueId())) continue;
+            if (filterMaterial != null && shop.getItem() != filterMaterial) continue;
+            result.add(shop);
+        }
+
+        result.sort(Comparator.comparingLong(Shop::getCreatedAt));
+        return result;
+    }
+
+    private void handleMyList(Player player, String itemFilterArg) {
+
+        List<Shop> shops = getOwnShopsFiltered(player, itemFilterArg);
+
+        if (shops.isEmpty()) {
+            player.sendMessage("§7У вас ще немає магазинів.");
+            return;
         }
 
         player.sendMessage("§b=== Твої магазини ===");
 
-        if (ownShops.isEmpty()) {
-            player.sendMessage("§7У тебе немає магазинів.");
+        SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy");
+
+        for (Shop shop : shops) {
+            String status = shop.isBroken() ? "§cBROKEN" : "§aACTIVE";
+
+            player.sendMessage("§f" + formatMaterialName(shop.getItem()));
+            player.sendMessage(status);
+            player.sendMessage("§7Створено: §f" + dateFormat.format(new Date(shop.getCreatedAt())));
+            player.sendMessage("§7XYZ: §f" + formatCoords(shop.getLocation()));
+            player.sendMessage("§7--------------------");
+        }
+    }
+
+    private void handleStats(Player player, String itemFilterArg) {
+
+        List<Shop> shops = getOwnShopsFiltered(player, itemFilterArg);
+
+        if (shops.isEmpty()) {
+            player.sendMessage("§7У вас ще немає магазинів.");
             return;
         }
 
-        for (Shop shop : ownShops) {
-            printOwnShopDetails(player, shop);
+        player.sendMessage("§b=== Статистика магазинів ===");
+
+        for (Shop shop : shops) {
+            String typeLabel = shop.getType().equals("sell") ? "SELL" : "BUY";
+            player.sendMessage("§f" + formatMaterialName(shop.getItem()) + " §7(" + typeLabel + ")");
+
+            if (shop.getTotalTrades() == 0) {
+                player.sendMessage("§7Поки що жодної успішної торгової операції.");
+                player.sendMessage("§7--------------------");
+                continue;
+            }
+
+            if (shop.getType().equals("sell")) {
+                player.sendMessage("§7Зароблено: §f" + shop.getTotalCurrency() + " " + pluralize((int) shop.getTotalCurrency(), "мембрана", "мембрани", "мембран"));
+                player.sendMessage("§7Продано: §f" + shop.getTotalTrades() + " " + pluralize(shop.getTotalTrades(), "покупка", "покупки", "покупок"));
+                player.sendMessage("§7Останній продаж: §f" + formatTimeAgo(shop.getLastTradeMillis()));
+            } else {
+                player.sendMessage("§7Витрачено: §f" + shop.getTotalCurrency() + " " + pluralize((int) shop.getTotalCurrency(), "мембрана", "мембрани", "мембран"));
+                player.sendMessage("§7Куплено: §f" + shop.getTotalTrades() + " " + pluralize(shop.getTotalTrades(), "покупка", "покупки", "покупок"));
+                player.sendMessage("§7Остання покупка: §f" + formatTimeAgo(shop.getLastTradeMillis()));
+            }
+
+            player.sendMessage("§7--------------------");
+        }
+    }
+
+    private void handleHistory(Player player, String itemFilterArg) {
+
+        List<Shop> shops = getOwnShopsFiltered(player, itemFilterArg);
+
+        if (shops.isEmpty()) {
+            player.sendMessage("§7У вас ще немає магазинів.");
+            return;
         }
 
-        player.sendMessage("§bВсього магазинів: " + ownShops.size());
+        player.sendMessage("§b=== Історія торгів ===");
+
+        SimpleDateFormat dateTimeFormat = new SimpleDateFormat("dd.MM HH:mm");
+
+        for (Shop shop : shops) {
+            String typeLabel = shop.getType().equals("sell") ? "SELL" : "BUY";
+            player.sendMessage("§f" + formatMaterialName(shop.getItem()) + " §7(" + typeLabel + ")");
+
+            List<HistoryStorage.HistoryRecord> records = historyStorage.loadRecords(shop.getId());
+
+            if (records.isEmpty()) {
+                player.sendMessage("§7Історія магазину порожня.");
+                player.sendMessage("§7--------------------");
+                continue;
+            }
+
+            printMergedHistory(player, records, dateTimeFormat);
+            player.sendMessage("§7--------------------");
+        }
     }
+
+    /** Об'єднує послідовні однакові операції (той самий гравець, дія, товар, кількість, ціна) в один рядок з ×N. */
+    private void printMergedHistory(Player player, List<HistoryStorage.HistoryRecord> records, SimpleDateFormat dateTimeFormat) {
+
+        int i = 0;
+        while (i < records.size()) {
+            HistoryStorage.HistoryRecord current = records.get(i);
+
+            int count = 1;
+            int j = i + 1;
+            while (j < records.size() && isSameOperation(current, records.get(j))) {
+                count++;
+                j++;
+            }
+
+            String itemName = formatMaterialName(Material.matchMaterial(current.itemName));
+            String suffix = count > 1 ? " §7×" + count : "";
+
+            player.sendMessage("§7" + dateTimeFormat.format(new Date(current.timeMillis)));
+            player.sendMessage("§f" + current.playerName + " " + current.verb + " " + current.amount + " " + itemName
+                    + " за " + current.price + "М" + suffix);
+
+            i = j;
+        }
+    }
+
+    private boolean isSameOperation(HistoryStorage.HistoryRecord a, HistoryStorage.HistoryRecord b) {
+        return a.playerName.equals(b.playerName)
+                && a.verb.equals(b.verb)
+                && a.itemName.equals(b.itemName)
+                && a.amount == b.amount
+                && a.price == b.price;
+    }
+
+    // -------------------------------------------------------------------
+    // АДМІНСЬКІ СПИСКИ
+    // -------------------------------------------------------------------
 
     private void handleListAll(Player player) {
 
@@ -648,18 +791,6 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
         return raw.substring(4, raw.length() - 1);
     }
 
-    private void printOwnShopDetails(Player player, Shop shop) {
-        String status = shop.isBroken() ? "§c🔴 BROKEN" : "§a🟢 ACTIVE";
-
-        player.sendMessage(status);
-        player.sendMessage("§fНазва: §7" + formatMaterialName(shop.getItem()));
-        player.sendMessage("§fТовар: §7" + shop.getItem() + " x" + shop.getAmount());
-        player.sendMessage("§fЦіна: §7" + shop.getPrice());
-        player.sendMessage("§fКлюч доступу: §e" + shop.getKey());
-        player.sendMessage("§fКоординати: §7" + formatCoords(shop.getLocation()));
-        player.sendMessage("§7--------------------");
-    }
-
     private void printAdminShopDetails(Player player, Shop shop) {
         OfflinePlayer owner = Bukkit.getOfflinePlayer(shop.getOwner());
         String ownerName = owner.getName() != null ? owner.getName() : "Невідомий";
@@ -696,6 +827,7 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
     }
 
     private String formatMaterialName(Material material) {
+        if (material == null) return "Невідомо";
         String[] words = material.name().toLowerCase().split("_");
         StringBuilder sb = new StringBuilder();
         for (String word : words) {
@@ -704,5 +836,34 @@ public class CShopCommand implements CommandExecutor, TabCompleter {
             sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
         }
         return sb.toString();
+    }
+
+    /** Стандартне українське відмінювання: 1 -> one, 2-4 -> few, решта -> many (з винятком 11-14). */
+    private String pluralize(int n, String one, String few, String many) {
+        int mod100 = n % 100;
+        int mod10 = n % 10;
+
+        if (mod10 == 1 && mod100 != 11) return one;
+        if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) return few;
+        return many;
+    }
+
+    private String formatTimeAgo(long millis) {
+        long diff = System.currentTimeMillis() - millis;
+
+        long minutes = diff / 60000;
+        if (minutes < 1) return "щойно";
+
+        if (minutes < 60) {
+            return minutes + " " + pluralize((int) minutes, "хвилину", "хвилини", "хвилин") + " тому";
+        }
+
+        long hours = diff / 3600000;
+        if (hours < 24) {
+            return hours + " " + pluralize((int) hours, "годину", "години", "годин") + " тому";
+        }
+
+        long days = diff / 86400000;
+        return days + " " + pluralize((int) days, "день", "дні", "днів") + " тому";
     }
 }
