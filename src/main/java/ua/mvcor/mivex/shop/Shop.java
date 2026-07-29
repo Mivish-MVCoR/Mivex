@@ -24,6 +24,8 @@ public class Shop {
     private int totalTrades;
     private long lastTradeMillis;
 
+    private boolean firstTradeRewarded;
+
     public Shop(UUID id,
                 UUID owner,
                 Location location,
@@ -43,6 +45,7 @@ public class Shop {
         this.type = type;
         this.key = key;
         this.createdAt = createdAt;
+        this.firstTradeRewarded = false;
         this.broken = false;
         this.totalCurrency = 0;
         this.totalTrades = 0;
@@ -138,5 +141,12 @@ public class Shop {
         this.totalTrades++;
         this.totalCurrency += currencyAmount;
         this.lastTradeMillis = System.currentTimeMillis();
+    }
+    public boolean isFirstTradeRewarded() {
+        return firstTradeRewarded;
+    }
+
+    public void setFirstTradeRewarded(boolean firstTradeRewarded) {
+        this.firstTradeRewarded = firstTradeRewarded;
     }
 }

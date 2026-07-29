@@ -73,6 +73,7 @@ public class ShopStorage {
             config.set(path + ".totalCurrency", shop.getTotalCurrency());
             config.set(path + ".totalTrades", shop.getTotalTrades());
             config.set(path + ".lastTradeMillis", shop.getLastTradeMillis());
+            config.set(path + ".firstTradeRewarded", shop.isFirstTradeRewarded());
         }
 
         try {
@@ -130,6 +131,7 @@ public class ShopStorage {
             shop.setTotalCurrency(config.getLong(path + ".totalCurrency", 0));
             shop.setTotalTrades(config.getInt(path + ".totalTrades", 0));
             shop.setLastTradeMillis(config.getLong(path + ".lastTradeMillis", 0));
+            shop.setFirstTradeRewarded(config.getBoolean(path + ".firstTradeRewarded", false));
 
             shopManager.addShop(shop);
         }

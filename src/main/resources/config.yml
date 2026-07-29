@@ -15,3 +15,9 @@ blocked-items:
 history:
   enabled: true
   max-records: 50
+events:
+  enabled: true
+  duration-hours: 0
+  first-trade:
+    enabled: true
+    reward: 5

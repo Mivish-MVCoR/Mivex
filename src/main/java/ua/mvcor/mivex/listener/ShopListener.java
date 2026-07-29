@@ -15,6 +15,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
+import ua.mvcor.mivex.events.ShopEvents;
 import ua.mvcor.mivex.shop.Shop;
 import ua.mvcor.mivex.shop.ShopManager;
 import ua.mvcor.mivex.storage.BrokenInventoryStorage;
@@ -32,13 +33,16 @@ public class ShopListener implements Listener {
     private final ShopStorage shopStorage;
     private final BrokenInventoryStorage inventoryStorage;
     private final HistoryStorage historyStorage;
+    private final ShopEvents shopEvents;
 
     public ShopListener(ShopManager shopManager, ShopStorage shopStorage,
-                        BrokenInventoryStorage inventoryStorage, HistoryStorage historyStorage) {
+                        BrokenInventoryStorage inventoryStorage, HistoryStorage historyStorage,
+                        ShopEvents shopEvents) {
         this.shopManager = shopManager;
         this.shopStorage = shopStorage;
         this.inventoryStorage = inventoryStorage;
         this.historyStorage = historyStorage;
+        this.shopEvents = shopEvents;
     }
 
     @EventHandler
@@ -191,6 +195,8 @@ public class ShopListener implements Listener {
                 player.getName(), "купив", shop.getItem().name(), needItem, needCurrency, System.currentTimeMillis()
         ));
 
+        shopEvents.onSuccessfulTrade(shop, player);
+
         player.sendMessage("§aКуплено " + needItem + "x " + shop.getItem() + " за " + needCurrency + " мембран.");
     }
 
@@ -237,6 +243,8 @@ public class ShopListener implements Listener {
         historyStorage.addRecord(shop.getId(), new HistoryStorage.HistoryRecord(
                 player.getName(), "продав", shop.getItem().name(), needItem, payCurrency, System.currentTimeMillis()
         ));
+
+        shopEvents.onSuccessfulTrade(shop, player);
 
         player.sendMessage("§aПродано " + needItem + "x " + shop.getItem() + " за " + payCurrency + " мембран.");
     }

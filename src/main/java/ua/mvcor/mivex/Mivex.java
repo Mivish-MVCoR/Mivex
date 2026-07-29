@@ -4,10 +4,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 import ua.mvcor.mivex.command.CShopCommand;
 import ua.mvcor.mivex.command.MivexCommand;
 import ua.mvcor.mivex.config.BlockedItemsConfig;
+import ua.mvcor.mivex.config.EventsConfig;
 import ua.mvcor.mivex.config.HistoryConfig;
+import ua.mvcor.mivex.events.ShopEvents;
 import ua.mvcor.mivex.listener.ShopListener;
 import ua.mvcor.mivex.shop.ShopManager;
 import ua.mvcor.mivex.storage.BrokenInventoryStorage;
+import ua.mvcor.mivex.storage.EventsStorage;
 import ua.mvcor.mivex.storage.HistoryStorage;
 import ua.mvcor.mivex.storage.ShopStorage;
 
@@ -17,18 +20,25 @@ public class Mivex extends JavaPlugin {
     private ShopStorage shopStorage;
     private BrokenInventoryStorage brokenInventoryStorage;
     private HistoryStorage historyStorage;
+    private EventsStorage eventsStorage;
+    private ShopEvents shopEvents;
 
     @Override
     public void onEnable() {
 
         saveDefaultConfig();
+        getConfig().options().copyDefaults(true);
+        saveConfig();
         BlockedItemsConfig.load(getConfig());
         HistoryConfig.load(getConfig());
+        EventsConfig.load(getConfig());
 
         shopManager = new ShopManager();
         shopStorage = new ShopStorage(this, shopManager);
         brokenInventoryStorage = new BrokenInventoryStorage(this);
         historyStorage = new HistoryStorage(this);
+        eventsStorage = new EventsStorage(this);
+        shopEvents = new ShopEvents(eventsStorage, shopStorage);
 
         shopStorage.loadShops();
 
@@ -38,7 +48,7 @@ public class Mivex extends JavaPlugin {
         getCommand("mivex").setExecutor(new MivexCommand());
 
         getServer().getPluginManager().registerEvents(
-                new ShopListener(shopManager, shopStorage, brokenInventoryStorage, historyStorage), this);
+                new ShopListener(shopManager, shopStorage, brokenInventoryStorage, historyStorage, shopEvents), this);
 
         getLogger().info("Mivex enabled!");
     }
